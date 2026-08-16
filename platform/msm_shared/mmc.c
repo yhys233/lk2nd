@@ -35,6 +35,7 @@
 #include <platform/clock.h>
 #include <platform/iomap.h>
 #include <platform/timer.h>
+#include <platform.h>
 #include <bits.h>
 #include <../../../app/aboot/bootimg.h>
 
@@ -55,6 +56,8 @@
 
 #define MMC_BOOT_DATA_READ     0
 #define MMC_BOOT_DATA_WRITE    1
+
+#define MMC_BOOT_MCLK_WR_TIMEOUT_MS  1
 
 static unsigned int mmc_boot_data_transfer(unsigned int *data_ptr,
 						unsigned int data_len,
@@ -174,7 +177,15 @@ void mmc_mclk_reg_wr_delay(void)
 	if (mmc_host.mmc_cont_version)
 	{
 		/* Wait for the MMC_BOOT_MCI register write to go through. */
-		while(readl(MMC_BOOT_MCI_STATUS2) & MMC_BOOT_MCI_MCLK_REG_WR_ACTIVE);
+		time_t deadline = current_time() + MMC_BOOT_MCLK_WR_TIMEOUT_MS;
+		while (readl(MMC_BOOT_MCI_STATUS2) & MMC_BOOT_MCI_MCLK_REG_WR_ACTIVE) {
+			if (current_time() > deadline) {
+				dprintf(CRITICAL,
+					"mmc_mclk_reg_wr_delay: MCLK write stuck (STATUS2:0x%x)\n",
+					readl(MMC_BOOT_MCI_STATUS2));
+				break;
+			}
+		}
 	}
 	else
 		udelay((1 + ((3 * USEC_PER_SEC) / (mmc_host.mclk_rate? mmc_host.mclk_rate : MMC_CLK_400KHZ))));
